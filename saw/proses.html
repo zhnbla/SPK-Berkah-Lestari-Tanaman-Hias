@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Proses SAW — Admin Berkah Lestari</title>
+<link rel="stylesheet" href="../style.css"/>
+</head>
+<body>
+<script src="../shared.js"></script>
+<script>
+requireAuth('../login.html');
+renderSidebar({ active: 'proses', root: '../' });
+</script>
+
+<main class="main">
+  <div class="topbar">
+    <div class="page-title">
+      <h2>Proses SAW</h2>
+      <p>Jalankan kalkulasi Simple Additive Weighting langkah per langkah</p>
+    </div>
+  </div>
+
+  <!-- STEP INDICATOR -->
+  <div class="saw-steps">
+    <div class="saw-step" id="step-1"><div class="step-num">1</div><div class="step-label">Matriks Keputusan</div></div>
+    <div class="saw-step" id="step-2"><div class="step-num">2</div><div class="step-label">Normalisasi Nilai</div></div>
+    <div class="saw-step" id="step-3"><div class="step-num">3</div><div class="step-label">Hitung Skor SAW</div></div>
+    <div class="saw-step" id="step-4"><div class="step-num">4</div><div class="step-label">Urutkan Ranking</div></div>
+  </div>
+
+  <!-- MATRICES -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div class="card">
+      <div class="card-header"><span class="card-title">Matriks Keputusan (X)</span></div>
+      <div class="card-body" style="padding:0;overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Tanaman</th>
+              <th>C1 Frekuensi</th>
+              <th>C2 Minat</th>
+              <th>C3 Stok</th>
+              <th>C4 Kecepatan</th>
+            </tr>
+          </thead>
+          <tbody id="matrix-tbody">
+            <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-muted)">Memuat data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Matriks Normalisasi (R)</span></div>
+      <div class="card-body" style="padding:0;overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>Tanaman</th><th>R C1</th><th>R C2</th><th>R C3</th><th>R C4</th></tr>
+          </thead>
+          <tbody id="normal-tbody">
+            <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-muted)">Jalankan SAW untuk melihat hasil</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOG & ACTION -->
+  <div class="card">
+    <div class="card-header"><span class="card-title">Log Proses Kalkulasi</span></div>
+    <div class="card-body">
+      <div class="process-log" id="log">
+        <span class="log-info">// Memuat data dari database...</span>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
+        <button class="btn btn-primary" onclick="runSAW()">▶ Jalankan SAW</button>
+        <button class="btn btn-outline" onclick="resetSAW()">↺ Reset</button>
+        <a id="link-ranking" class="btn btn-outline" href="../saw/ranking.html" style="display:none">🏆 Lihat Ranking →</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const API   = '../api.php';
+const bobot = getBobot();
+const jenis = getJenis();
+let tanaman = [];
+
+// ── Load data dari database ──────────────────────────────────
+async function loadData() {
+  try {
+    const res  = await fetch(`${API}?action=getSAWData`);
+    tanaman    = await res.json();
+
+    if (!tanaman.length) {
+      document.getElementById('matrix-tbody').innerHTML =
+        '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-muted)">Belum ada data tanaman</td></tr>';
+      document.getElementById('log').innerHTML =
+        '<span class="log-warn">// Belum ada data tanaman di database</span>';
+      return;
+    }
+
+    // Isi matriks keputusan
+    document.getElementById('matrix-tbody').innerHTML = tanaman.map(t => `
+      <tr>
+        <td>${t.nama_tanaman}</td>
+        <td>${t.c1_frekuensi}</td>
+        <td>${t.c2_minat}</td>
+        <td>${t.c3_sisa_stok}</td>
+        <td>${t.c4_kecepatan}</td>
+      </tr>`).join('');
+
+    document.getElementById('log').innerHTML =
+      `<span class="log-info">// Data berhasil dimuat: ${tanaman.length} tanaman</span>\n` +
+      `<span class="log-warn">// Tekan "Jalankan SAW" untuk memulai kalkulasi</span>`;
+
+  } catch (err) {
+    document.getElementById('log').innerHTML =
+      '<span class="log-warn">// Gagal memuat data dari database</span>';
+    console.error(err);
+  }
+}
+
+function setStep(n) {
+  [1,2,3,4].forEach(i => {
+    const el = document.getElementById('step-' + i);
+    el.className = 'saw-step ' + (i < n ? 'done' : i === n ? 'active-step' : '');
+  });
+}
+
+function addLog(msg, type = '') {
+  const el = document.getElementById('log');
+  el.innerHTML += `\n<span class="${type ? 'log-' + type : ''}">${msg}</span>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function runSAW() {
+  if (!tanaman.length) { alert('Data belum termuat!'); return; }
+  if (tanaman.length < 2) { alert('Minimal 2 tanaman!'); return; }
+
+  const total = bobot.reduce((s, b) => s + b, 0);
+  if (Math.abs(total - 1) > 0.001) {
+    alert('Total bobot belum = 1.00!\nAtur di halaman Kriteria & Bobot terlebih dahulu.');
+    return;
+  }
+
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('link-ranking').style.display = 'none';
+
+  // ── STEP 1
+  setStep(1);
+  addLog('=== STEP 1: Matriks Keputusan ===', 'info');
+  await delay(300);
+
+  // nilai: [c1_frekuensi, c2_minat, stok, c4_kecepatan]
+  const values = tanaman.map(t => [
+    +t.c1_frekuensi,
+    +t.c2_minat,
+    +t.c3_sisa_stok,
+    +t.c4_kecepatan
+  ]);
+  values.forEach((row, i) =>
+    addLog(`  ${tanaman[i].nama_tanaman.padEnd(22)} → [${row.join(', ')}]`)
+  );
+  await delay(400);
+
+  // ── STEP 2
+  setStep(2);
+  addLog('\n=== STEP 2: Normalisasi ===', 'info');
+  addLog(`  Jenis: C1=${jenis[0]}, C2=${jenis[1]}, C3=${jenis[2]}, C4=${jenis[3]}`, 'warn');
+  await delay(300);
+
+  const cols = [0,1,2,3].map(j => values.map(r => r[j]));
+  const maxC = cols.map(c => Math.max(...c));
+  const minC = cols.map(c => Math.min(...c));
+  addLog(`  Max  → [${maxC.join(', ')}]`);
+  addLog(`  Min  → [${minC.join(', ')}]`);
+  await delay(300);
+
+  const normal = values.map(row =>
+    row.map((x, j) => parseFloat(
+      (jenis[j] === 'benefit' ? x / maxC[j] : minC[j] / x).toFixed(4)
+    ))
+  );
+  normal.forEach((row, i) =>
+    addLog(`  ${tanaman[i].nama_tanaman.padEnd(22)} → [${row.join(', ')}]`, 'success')
+  );
+
+  document.getElementById('normal-tbody').innerHTML = normal.map((row, i) =>
+    `<tr><td>${tanaman[i].nama_tanaman}</td>${row.map(v => `<td>${v.toFixed(4)}</td>`).join('')}</tr>`
+  ).join('');
+  await delay(400);
+
+  // ── STEP 3
+  setStep(3);
+  addLog('\n=== STEP 3: Hitung Skor SAW ===', 'info');
+  addLog(`  Bobot → [${bobot.join(', ')}]`, 'warn');
+  await delay(300);
+
+  const scores = normal.map((row, i) => {
+    const s = parseFloat(row.reduce((sum, v, j) => sum + v * bobot[j], 0).toFixed(4));
+    addLog(`  ${tanaman[i].nama_tanaman.padEnd(22)} Skor = ${s}`, 'success');
+    return s;
+  });
+  await delay(400);
+
+  // ── STEP 4
+  setStep(4);
+  addLog('\n=== STEP 4: Ranking ===', 'info');
+  await delay(300);
+
+  const ranked = tanaman
+    .map((t, i) => ({ ...t, skor: scores[i] }))
+    .sort((a, b) => b.skor - a.skor)
+    .map((t, rank) => ({ ...t, rank: rank + 1 }));
+
+  ranked.forEach(t =>
+    addLog(`  #${t.rank}  ${t.nama_tanaman.padEnd(22)} Skor = ${t.skor}`, 'success')
+  );
+  addLog('\n✅ Proses SAW selesai!', 'success');
+
+  saveSAWResult(ranked);
+  saveSAWTime(new Date().toLocaleTimeString('id-ID'));
+
+  document.getElementById('link-ranking').style.display = 'inline-flex';
+}
+
+function resetSAW() {
+  setStep(0);
+  document.getElementById('log').innerHTML =
+    '<span class="log-info">// Reset — siap menjalankan ulang proses SAW</span>';
+  document.getElementById('normal-tbody').innerHTML =
+    '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-muted)">Jalankan SAW untuk melihat hasil</td></tr>';
+  document.getElementById('link-ranking').style.display = 'none';
+}
+
+loadData();
+</script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Login — Admin Berkah Lestari</title>
+<link rel="stylesheet" href="style.css"/>
+<style>
+body{display:flex;min-height:100vh;background:var(--green-dark)}
+.login-left{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px;position:relative;overflow:hidden}
+.login-left::before{content:'';position:absolute;width:400px;height:400px;background:rgba(109,165,122,.08);border-radius:50%;top:-80px;right:-80px}
+.login-left::after{content:'';position:absolute;width:300px;height:300px;background:rgba(109,165,122,.06);border-radius:50%;bottom:-60px;left:-60px}
+.login-brand{text-align:center;position:relative;z-index:1}
+.login-brand h1{font-family:'Playfair Display',serif;font-size:42px;color:#fff;line-height:1.1}
+.login-brand p{color:rgba(255,255,255,.55);font-size:15px;margin-top:10px}
+.leaf{font-size:72px;margin-bottom:20px;display:block;animation:float 3s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-10px) rotate(3deg)}}
+.tagline{margin-top:36px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:16px 24px;text-align:center;position:relative;z-index:1}
+.tagline p{color:rgba(255,255,255,.6);font-size:12.5px;line-height:1.8}
+.login-right{width:440px;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 48px}
+.form-title{font-family:'Playfair Display',serif;font-size:26px;color:var(--text-dark);font-weight:600;margin-bottom:6px}
+.form-sub{font-size:13px;color:var(--text-muted);margin-bottom:32px}
+.login-form{width:100%}
+.field{margin-bottom:18px}
+.lbl{display:block;font-size:11.5px;font-weight:600;color:var(--text-mid);margin-bottom:7px;text-transform:uppercase;letter-spacing:.5px}
+.inp{width:100%;padding:12px 16px;border:1.5px solid var(--border);border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;color:var(--text-dark);outline:none;transition:all .2s;background:#fafafa}
+.inp:focus{border-color:var(--green-mid);background:#fff;box-shadow:0 0 0 3px rgba(61,90,69,.1)}
+.inp.error{border-color:var(--red)}
+.pw-wrap{position:relative}
+.toggle-pw{position:absolute;right:14px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;color:var(--text-muted)}
+.login-btn{width:100%;padding:13px;background:var(--green-dark);color:#fff;border:none;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;margin-top:6px}
+.login-btn:hover{background:var(--green-mid)}
+.err-msg{background:#fde8e8;color:var(--red);border-radius:8px;padding:11px 14px;font-size:13px;margin-bottom:16px;display:none;border-left:3px solid var(--red)}
+.err-msg.show{display:block;animation:shake .3s ease}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.hint{margin-top:24px;padding:14px;background:var(--green-pale);border-radius:8px;font-size:12px;color:var(--text-mid);line-height:1.9}
+</style>
+</head>
+<body>
+
+<div class="login-left">
+  <div class="login-brand">
+    <span class="leaf">🌿</span>
+    <h1>Berkah Lestari</h1>
+    <p>Sistem Manajemen Stok Tanaman</p>
+  </div>
+  <div class="tagline">
+    <p>Panel admin untuk mengelola data tanaman<br/>dan analisis prioritas stok dengan metode SAW</p>
+  </div>
+</div>
+
+<div class="login-right">
+  <div class="form-title">Selamat Datang</div>
+  <div class="form-sub">Masuk ke panel admin Berkah Lestari</div>
+
+  <div class="login-form">
+    <div class="err-msg" id="err">❌ Username atau password salah.</div>
+
+    <div class="field">
+      <label class="lbl">Username</label>
+      <input class="inp" id="inp-user" type="text" placeholder="Masukkan username" autofocus
+             onkeydown="if(event.key==='Enter')doLogin()"/>
+    </div>
+    <div class="field">
+      <label class="lbl">Password</label>
+      <div class="pw-wrap">
+        <input class="inp" id="inp-pass" type="password" placeholder="Masukkan password"
+               onkeydown="if(event.key==='Enter')doLogin()"/>
+        <button class="toggle-pw" type="button" onclick="togglePw()">👁</button>
+      </div>
+    </div>
+
+    <button class="login-btn" id="login-btn" onclick="doLogin()">Masuk ke Dashboard</button>
+
+    <div class="hint">
+      <b>Akun default:</b><br/>
+      Username: <b>admin</b> &nbsp;|&nbsp; Password: <b>berkah123</b><br/>
+      Username: <b>manager</b> &nbsp;|&nbsp; Password: <b>lestari456</b> <span style="color:var(--green-mid)">(Manajer)</span>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+// Kalau sudah login, langsung redirect
+//if (getAuth()) window.location.href = 'dashboard/index.html';
+
+function doLogin() {
+  const u = document.getElementById('inp-user').value.trim();
+  const p = document.getElementById('inp-pass').value;
+  const errEl = document.getElementById('err');
+  const btn = document.getElementById('login-btn');
+
+  const found = USERS.find(x => x.username === u && x.password === p);
+  if (!found) {
+    errEl.classList.add('show');
+    document.getElementById('inp-user').classList.add('error');
+    document.getElementById('inp-pass').classList.add('error');
+    document.getElementById('inp-pass').value = '';
+    return;
+  }
+
+  setAuth({ username: u, display: found.display, role: found.role });
+  btn.textContent = '✅ Berhasil masuk...';
+  btn.style.background = 'var(--green-accent)';
+  const dest = found.role === 'manager' ? 'saw/ranking.html' : 'dashboard/index.html';
+  setTimeout(() => window.location.href = dest, 600);
+}
+
+function togglePw() {
+  const inp = document.getElementById('inp-pass');
+  const btn = document.querySelector('.toggle-pw');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  btn.textContent = inp.type === 'password' ? '👁' : '🙈';
+}
+</script>
+</body>
+</html>

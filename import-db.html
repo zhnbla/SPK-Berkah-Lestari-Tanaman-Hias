@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Import Database — Berkah Lestari</title>
+<link rel="stylesheet" href="style.css"/>
+<style>
+body{background:var(--bg);font-family:'DM Sans',sans-serif;padding:32px}
+.wrap{max-width:960px;margin:0 auto}
+h1{font-size:22px;color:var(--text-dark);margin-bottom:4px}
+.sub{color:var(--text-muted);font-size:13px;margin-bottom:28px}
+textarea{width:100%;font-family:monospace;font-size:12px;padding:10px;
+  border:1.5px solid var(--border);border-radius:8px;resize:vertical;
+  background:#f9fafb;color:var(--text-dark);outline:none;box-sizing:border-box}
+textarea:focus{border-color:var(--green-mid)}
+.step-box{background:#fff;border:1px solid var(--border);border-radius:10px;
+  padding:20px 24px;margin-bottom:20px;box-shadow:var(--shadow)}
+.step-title{font-size:13px;font-weight:700;color:var(--green-dark);
+  margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.num{background:var(--green-dark);color:#fff;border-radius:50%;
+  width:22px;height:22px;display:inline-flex;align-items:center;
+  justify-content:center;font-size:11px;flex-shrink:0}
+pre{background:#1e2530;color:#a8d8a8;padding:14px;border-radius:8px;
+  font-size:11.5px;overflow-x:auto;margin:10px 0;line-height:1.7}
+code{background:#f0f4f0;padding:2px 7px;border-radius:4px;font-size:12px;color:var(--green-dark);font-family:monospace}
+#log{background:#1e2530;color:#ccc;padding:14px;border-radius:8px;
+  font-size:12px;min-height:80px;max-height:220px;overflow-y:auto;
+  font-family:monospace;white-space:pre-wrap}
+.ok{color:#6fcf97}.err{color:#eb5757}.warn{color:#f2c94c}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#f0f4f0;padding:8px 12px;text-align:left;font-weight:600;
+  color:var(--text-mid);border-bottom:1px solid var(--border)}
+td{padding:8px 12px;border-bottom:1px solid #f0f0f0;color:var(--text-dark)}
+tr:last-child td{border-bottom:none}
+.bc{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600}
+.b{background:#e4f4e8;color:#2d7a3c}.c{background:#fde8e8;color:#c0392b}
+</style>
+</head>
+<body>
+<script src="shared.js"></script>
+<div class="wrap">
+  <h1>🗄️ Import Data dari Database MySQL</h1>
+  <p class="sub">Konversi data dari <code>db_tanaman_hias</code> ke localStorage website.</p>
+
+  <!-- STEP 1: QUERY -->
+  <div class="step-box">
+    <div class="step-title"><span class="num">1</span> Jalankan query ini di phpMyAdmin → tab SQL</div>
+    <pre id="sql-text">SELECT
+  t.id,
+  t.nama_tanaman,
+  t.harga,
+  t.stok_sekarang AS stok,
+  ROUND(
+    (SUM(p.jumlah_terjual) /
+      (SELECT MAX(s) FROM (SELECT SUM(jumlah_terjual) s FROM penjualan GROUP BY tanaman_id) mx)
+    ) * 9 + 1
+  , 0) AS c1_frekuensi,
+  ROUND(
+    (SUM(pm.jumlah_permintaan) /
+      (SELECT MAX(s) FROM (SELECT SUM(jumlah_permintaan) s FROM permintaan GROUP BY tanaman_id) mx)
+    ) * 9 + 1
+  , 0) AS c2_minat,
+  ROUND(
+    ((t.stok_awal - t.stok_sekarang) /
+      NULLIF((SELECT MAX(v) FROM (SELECT (stok_awal - stok_sekarang) v FROM tanaman) mv), 0)
+    ) * 9 + 1
+  , 0) AS c4_kecepatan
+FROM tanaman t
+LEFT JOIN penjualan p ON p.tanaman_id = t.id
+LEFT JOIN permintaan pm ON pm.tanaman_id = t.id
+GROUP BY t.id, t.nama_tanaman, t.harga, t.stok_sekarang, t.stok_awal
+ORDER BY t.id;</pre>
+    <button class="btn btn-outline btn-sm" onclick="copyQuery()">📋 Salin Query</button>
+    <span id="copy-ok" style="font-size:12px;color:var(--green-dark);margin-left:8px;display:none">✅ Tersalin!</span>
+  </div>
+
+  <!-- STEP 2: PASTE -->
+  <div class="step-box">
+    <div class="step-title"><span class="num">2</span> Paste hasil dari Excel / CSV di sini</div>
+    <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:10px">
+      Buka file Excel hasil export → <b>Ctrl+A</b> → <b>Ctrl+C</b> → paste di sini.<br/>
+      Atau kalau pakai CSV: buka dengan Notepad → Ctrl+A → Ctrl+C → paste.
+    </p>
+    <textarea id="csv-input" rows="10" placeholder="Paste data Excel/CSV di sini..."></textarea>
+    <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="parseData()">🔍 Preview Data</button>
+      <button class="btn btn-outline" onclick="document.getElementById('csv-input').value='';document.getElementById('preview-box').style.display='none'">✕ Hapus</button>
+    </div>
+  </div>
+
+  <!-- PREVIEW -->
+  <div class="step-box" id="preview-box" style="display:none">
+    <div class="step-title"><span class="num">3</span> Preview — cek data sebelum import</div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Nama Tanaman</th><th>Harga</th>
+            <th>C3 Stok <span class="bc c">Cost</span></th>
+            <th>C1 Frekuensi <span class="bc b">Benefit</span></th>
+            <th>C2 Minat <span class="bc b">Benefit</span></th>
+            <th>C4 Kecepatan <span class="bc c">Cost</span></th>
+          </tr>
+        </thead>
+        <tbody id="preview-tbody"></tbody>
+      </table>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="doImport()" id="btn-import">✅ Import ke Website</button>
+      <span style="font-size:12px;color:var(--text-muted)" id="row-count"></span>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="step-box">
+    <div class="step-title"><span class="num">4</span> Log Proses</div>
+    <div id="log">// Menunggu input data...</div>
+    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+      <a class="btn btn-primary" href="dashboard/index.html" id="link-dash" style="display:none">🏠 Ke Dashboard →</a>
+      <a class="btn btn-outline" href="saw/proses.html" id="link-saw" style="display:none">⚙️ Langsung Hitung SAW →</a>
+    </div>
+  </div>
+</div>
+
+<script>
+const SQL_QUERY = document.getElementById('sql-text').textContent;
+
+function copyQuery(){
+  navigator.clipboard.writeText(SQL_QUERY).then(()=>{
+    const el=document.getElementById('copy-ok');
+    el.style.display='inline';
+    setTimeout(()=>el.style.display='none',2000);
+  });
+}
+
+function log(msg,cls=''){
+  const el=document.getElementById('log');
+  if(el.textContent==='// Menunggu input data...') el.textContent='';
+  el.innerHTML+=`<span class="${cls}">${msg}</span>\n`;
+  el.scrollTop=el.scrollHeight;
+}
+
+let parsedData=[];
+
+// Normalize header names to field keys
+function detectField(header){
+  const h=header.toLowerCase().replace(/[^a-z0-9]/g,'');
+  if(h.includes('namatanaman')||h.includes('nama')) return 'nama';
+  if(h.includes('harga')) return 'harga';
+  if(h.includes('stok')&&!h.includes('awal')) return 'stok';
+  if(h.includes('c1')||h.includes('frekuensi')) return 'frekuensi';
+  if(h.includes('c2')||h.includes('minat')) return 'minat';
+  if(h.includes('c4')||h.includes('kecepatan')) return 'kecepatan';
+  return null;
+}
+
+function splitLine(line){
+  // Handle tab-separated (Excel paste) or comma-separated (CSV)
+  if(line.includes('\t')) return line.split('\t').map(c=>c.replace(/^["'\s]+|["'\s]+$/g,'').trim());
+  return line.split(',').map(c=>c.replace(/^["'\s]+|["'\s]+$/g,'').trim());
+}
+
+function parseData(){
+  const raw=document.getElementById('csv-input').value.trim();
+  if(!raw){alert('Data masih kosong!');return;}
+
+  document.getElementById('log').textContent='';
+  log('=== Parsing Data ===','ok');
+
+  const lines=raw.split('\n').map(l=>l.trim()).filter(l=>l);
+  if(lines.length<2){log('❌ Data kurang dari 2 baris!','err');return;}
+
+  // Detect headers from first line
+  const headers=splitLine(lines[0]);
+  log(`  Header ditemukan: [${headers.join(' | ')}]`,'warn');
+
+  const fieldMap=headers.map(h=>detectField(h));
+  log(`  Mapping: [${fieldMap.map((f,i)=>f?f:'(skip)').join(' | ')}]`,'warn');
+
+  const required=['nama','harga','stok','frekuensi','minat','kecepatan'];
+  const missing=required.filter(r=>!fieldMap.includes(r));
+  if(missing.length){
+    log(`❌ Kolom tidak ditemukan: ${missing.join(', ')}`, 'err');
+    log('  Pastikan query dijalankan dengan benar dan semua kolom ada.','warn');
+    return;
+  }
+
+  parsedData=[];
+  const errors=[];
+
+  lines.slice(1).forEach((line,i)=>{
+    const cols=splitLine(line);
+    const row={};
+    fieldMap.forEach((field,j)=>{ if(field) row[field]=cols[j]||''; });
+
+    const nama=row.nama||'';
+    const harga=parseInt(row.harga)||0;
+    const stok=parseInt(row.stok);
+    const frekuensi=Math.min(10,Math.max(1,parseInt(row.frekuensi)||1));
+    const minat=Math.min(10,Math.max(1,parseInt(row.minat)||1));
+    const kecepatan=Math.min(10,Math.max(1,parseInt(row.kecepatan)||1));
+
+    if(!nama){errors.push(`Baris ${i+2}: nama kosong`);return;}
+    if(isNaN(stok)){errors.push(`Baris ${i+2}: stok tidak valid`);return;}
+
+    parsedData.push({nama,harga,stok,frekuensi,minat,kecepatan});
+    log(`  ✔ ${nama.padEnd(24)} Harga:${harga} Stok:${stok} C1:${frekuensi} C2:${minat} C4:${kecepatan}`,'ok');
+  });
+
+  if(errors.length) errors.forEach(e=>log('  ⚠ '+e,'err'));
+
+  if(parsedData.length===0){
+    log('\n❌ Tidak ada data valid. Cek format data Anda.','err');
+    return;
+  }
+
+  log(`\n✅ ${parsedData.length} tanaman siap diimport!`,'ok');
+
+  document.getElementById('preview-tbody').innerHTML=parsedData.map((t,i)=>`
+    <tr>
+      <td>${i+1}</td>
+      <td><b>${t.nama}</b></td>
+      <td>Rp ${t.harga.toLocaleString('id-ID')}</td>
+      <td>${t.stok} unit</td>
+      <td>${t.frekuensi}/10</td>
+      <td>${t.minat}/10</td>
+      <td>${t.kecepatan}/10</td>
+    </tr>`).join('');
+
+  document.getElementById('row-count').textContent=`${parsedData.length} tanaman`;
+  document.getElementById('preview-box').style.display='block';
+  document.getElementById('preview-box').scrollIntoView({behavior:'smooth'});
+}
+
+function doImport(){
+  if(!parsedData.length){alert('Parse data dulu!');return;}
+  saveTanamanLS(parsedData);
+  localStorage.removeItem('bl_saw_result');
+  localStorage.removeItem('bl_saw_time');
+  log('\n=== Import ke localStorage ===','ok');
+  log(`  ✅ ${parsedData.length} tanaman berhasil disimpan!`,'ok');
+  log('  ℹ️  Hasil SAW lama direset — jalankan ulang SAW.','warn');
+  log('\n🎉 Import selesai!','ok');
+  document.getElementById('btn-import').textContent='✅ Sudah Diimport';
+  document.getElementById('btn-import').disabled=true;
+  document.getElementById('link-dash').style.display='inline-flex';
+  document.getElementById('link-saw').style.display='inline-flex';
+}
+</script>
+</body>
+</html>

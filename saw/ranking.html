@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Hasil Ranking — Admin Berkah Lestari</title>
+<link rel="stylesheet" href="../style.css"/>
+</head>
+<body>
+<script src="../shared.js"></script>
+<script>
+requireAuth('../login.html');
+renderSidebar({ active: 'ranking', root: '../' });
+</script>
+
+<main class="main">
+  <div class="topbar">
+    <div class="page-title">
+      <h2>Hasil Ranking SAW</h2>
+      <p>Tanaman diurutkan berdasarkan prioritas kebutuhan restock</p>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-outline btn-sm" onclick="window.print()">🖨 Cetak</button>
+      <a class="btn btn-primary btn-sm" href="proses.html">⚙️ Hitung Ulang</a>
+    </div>
+  </div>
+
+  <!-- EMPTY STATE -->
+  <div id="empty" class="card" style="display:none">
+    <div class="card-body">
+      <div class="empty-state">
+        <div class="empty-icon">📊</div>
+        <p>Belum ada hasil ranking.</p>
+        <p style="margin-top:6px">Jalankan proses SAW terlebih dahulu.</p>
+        <a class="btn btn-primary" style="margin-top:16px" href="proses.html">Ke Halaman Proses SAW</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- HASIL -->
+  <div id="hasil">
+    <div class="alert alert-success" id="info-alert"></div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Tabel Ranking Prioritas Restock</span>
+        <span class="badge badge-green" id="timestamp-badge"></span>
+      </div>
+      <div class="card-body" style="padding:0;overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Nama Tanaman</th>
+              <th>Harga</th>
+              <th>C1 Frekuensi</th>
+              <th>C2 Minat</th>
+              <th>C3 Stok</th>
+              <th>C4 Kecepatan</th>
+              <th>Skor SAW</th>
+              <th>Visual Skor</th>
+              <th>Status Stok</th>
+            </tr>
+          </thead>
+          <tbody id="ranking-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:0">
+      <div class="card">
+        <div class="card-header"><span class="card-title">🚨 Rekomendasi Restock</span></div>
+        <div class="card-body" id="rekomendasi"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">📋 Ringkasan Kalkulasi</span></div>
+        <div class="card-body" id="ringkasan"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const result  = getSAWResult();
+const sawTime = getSAWTime();
+const bobot   = getBobot();
+
+if (!result) {
+  document.getElementById('empty').style.display  = 'block';
+  document.getElementById('hasil').style.display  = 'none';
+} else {
+  document.getElementById('empty').style.display  = 'none';
+  document.getElementById('hasil').style.display  = 'block';
+
+  const kritis = result.filter(t => +t.c3_sisa_stok <= 3).length;
+  const rendah = result.filter(t => +t.c3_sisa_stok > 3 && +t.c3_sisa_stok <= 6).length;
+
+  document.getElementById('info-alert').innerHTML =
+    `✅ Kalkulasi SAW selesai untuk <b>${result.length}</b> tanaman.
+     Ditemukan <b>${kritis}</b> stok kritis dan <b>${rendah}</b> stok rendah yang perlu diperhatikan.`;
+
+  document.getElementById('timestamp-badge').textContent = sawTime ? 'Pukul ' + sawTime : '';
+
+  const maxSkor = result[0].skor;
+  document.getElementById('ranking-tbody').innerHTML = result.map(t => {
+    const w      = Math.round((t.skor / maxSkor) * 130);
+    const col    = t.rank === 1 ? 'var(--red)' : t.rank <= 3 ? 'var(--amber)' : 'var(--green-accent)';
+    const rClass = t.rank <= 3 ? 'rank-' + t.rank : 'rank-other';
+    return `<tr>
+      <td><span class="rank-circle ${rClass}">${t.rank}</span></td>
+      <td><b>${t.nama_tanaman}</b></td>
+      <td>Rp ${parseInt(t.harga).toLocaleString('id-ID')}</td>
+      <td>${t.c1_frekuensi} unit</td>
+      <td>${t.c2_minat} permintaan</td>
+      <td>${t.c3_sisa_stok} unit</td>
+      <td>${t.c4_kecepatan} hari</td>
+      <td><b>${t.skor.toFixed(4)}</b></td>
+      <td>
+        <div class="score-bar">
+          <div class="score-fill" style="width:${w}px;background:${col}"></div>
+        </div>
+      </td>
+      <td>${stockBadge(+t.c3_sisa_stok)}</td>
+    </tr>`;
+  }).join('');
+
+  // Rekomendasi
+  const urgent = result.filter(t => +t.c3_sisa_stok <= 6);
+  document.getElementById('rekomendasi').innerHTML = urgent.length
+    ? urgent.map(t => `
+        <div style="display:flex;align-items:center;justify-content:space-between;
+                    padding:10px 0;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-size:13px;font-weight:600">${t.nama_tanaman}</div>
+            <div style="font-size:11px;color:var(--text-muted)">
+              Rank #${t.rank} · Skor ${t.skor.toFixed(4)} · ${t.c3_sisa_stok} unit tersisa
+            </div>
+          </div>
+          ${stockBadge(+t.c3_sisa_stok)}
+        </div>`).join('')
+    : '<p style="color:var(--text-muted);font-size:13px">Semua stok dalam kondisi aman ✅</p>';
+
+  // Ringkasan
+  const last = result[result.length - 1];
+  document.getElementById('ringkasan').innerHTML = `
+    <div style="font-size:13px;line-height:2.2">
+      <div>📦 Total tanaman: <b>${result.length}</b></div>
+      <div>⚖️ Bobot: C1=${bobot[0]} · C2=${bobot[1]} · C3=${bobot[2]} · C4=${bobot[3]}</div>
+      <div>🥇 Prioritas 1: <b>${result[0].nama_tanaman}</b> (${result[0].skor.toFixed(4)})</div>
+      <div>🔻 Prioritas akhir: <b>${last.nama_tanaman}</b> (${last.skor.toFixed(4)})</div>
+      <div>🚨 Stok kritis ≤3: <b>${result.filter(t => +t.c3_sisa_stok <= 3).length} tanaman</b></div>
+      <div>⚠️ Stok rendah ≤6: <b>${result.filter(t => +t.c3_sisa_stok <= 6).length} tanaman</b></div>
+    </div>`;
+}
+</script>
+</body>
+</html>

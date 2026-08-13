@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Kriteria &amp; Bobot — Admin Berkah Lestari</title>
+<link rel="stylesheet" href="../style.css"/>
+</head>
+<body>
+<script src="../shared.js"></script>
+<script>
+requireAuth('../login.html');
+renderSidebar({ active: 'kriteria', root: '../' });
+// Sembunyikan aksi edit untuk manajer
+if (isManager()) {
+  document.addEventListener('DOMContentLoaded', function() {
+    // Sembunyikan tombol simpan
+    const topbarActions = document.querySelector('.topbar-actions');
+    if (topbarActions) topbarActions.style.display = 'none';
+    // Tambah info banner
+    const main = document.querySelector('.main');
+    const banner = document.createElement('div');
+    banner.className = 'alert';
+    banner.style.cssText = 'background:#fff3cd;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;color:#92400e;';
+    banner.innerHTML = '👁 <b>Mode Lihat Saja</b> — Manajer tidak dapat mengubah bobot & kriteria.';
+    main.insertBefore(banner, main.children[1]);
+    // Disable semua input bobot
+    setTimeout(() => {
+      document.querySelectorAll('.weight-input').forEach(inp => {
+        inp.disabled = true;
+        inp.style.background = '#f3f4f6';
+        inp.style.cursor = 'not-allowed';
+      });
+    }, 300);
+  });
+}
+</script>
+
+<main class="main">
+  <div class="topbar">
+    <div class="page-title">
+      <h2>Kriteria &amp; Bobot</h2>
+      <p>Atur bobot tiap kriteria SAW — total harus = 1.00</p>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-primary" onclick="simpan()">💾 Simpan Bobot</button>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+    <!-- FORM BOBOT -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Setting Bobot Kriteria</span></div>
+      <div class="card-body">
+        <div id="weight-rows"></div>
+        <div class="weight-total" id="total-display">Total Bobot: 0.00 / 1.00</div>
+        <div id="bobot-alert" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    <!-- KETERANGAN -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Penjelasan Tiap Kriteria</span></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+
+        <div style="padding:14px;background:var(--green-pale);border-radius:8px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">
+            C1 — Frekuensi Penjualan <span class="badge badge-green">Benefit</span>
+          </div>
+          <p style="font-size:12.5px;color:var(--text-mid);line-height:1.7">
+            Dihitung otomatis dari total penjualan per tanaman, dinormalisasi ke skala 1–10. Semakin tinggi frekuensi penjualan → prioritas restock lebih tinggi.
+          </p>
+        </div>
+
+        <div style="padding:14px;background:var(--green-pale);border-radius:8px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">
+            C2 — Minat Pelanggan <span class="badge badge-green">Benefit</span>
+          </div>
+          <p style="font-size:12.5px;color:var(--text-mid);line-height:1.7">
+            Dihitung otomatis dari total permintaan per tanaman, dinormalisasi ke skala 1–10. Semakin tinggi minat pelanggan → urgensi restock lebih tinggi.
+          </p>
+        </div>
+
+        <div style="padding:14px;background:#fde8e8;border-radius:8px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">
+            C3 — Sisa Stok <span class="badge badge-red">Cost</span>
+          </div>
+          <p style="font-size:12.5px;color:var(--text-mid);line-height:1.7">
+            Diambil dari kolom <b>stok_sekarang</b> di tabel tanaman. Semakin <b>sedikit</b> stok → normalisasi naik → urgensi restock makin tinggi. Rumus: <b>min(C3) / nilai</b>.
+          </p>
+        </div>
+
+        <div style="padding:14px;background:#fde8e8;border-radius:8px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">
+            C4 — Kecepatan Habis <span class="badge badge-red">Cost</span>
+          </div>
+          <p style="font-size:12.5px;color:var(--text-mid);line-height:1.7">
+            Dihitung dari <b>(stok_awal - stok_sekarang)</b>, dinormalisasi ke skala 1–10. Semakin cepat habis → perlu segera direstok. Rumus: <b>min(C4) / nilai</b>.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+let bobot = getBobot();
+
+function renderBobot() {
+  document.getElementById('weight-rows').innerHTML = bobot.map((b, i) => `
+    <div class="weight-row">
+      <div class="weight-name">${KRITERIA_NAMES[i]}</div>
+      <div class="weight-type">
+        <span class="badge ${DEFAULT_JENIS[i] === 'benefit' ? 'badge-green' : 'badge-red'}">
+          ${DEFAULT_JENIS[i] === 'benefit' ? 'Benefit' : 'Cost'}
+        </span>
+      </div>
+      <input class="weight-input" type="number" step="0.01" min="0" max="1"
+             value="${b}" onchange="ubahBobot(${i}, this.value)"/>
+    </div>`).join('');
+  updateTotal();
+}
+
+function ubahBobot(i, v) {
+  bobot[i] = parseFloat(v) || 0;
+  updateTotal();
+}
+
+function updateTotal() {
+  const total = bobot.reduce((s, b) => s + b, 0);
+  document.getElementById('total-display').textContent = `Total Bobot: ${total.toFixed(2)} / 1.00`;
+  const ok = Math.abs(total - 1) < 0.001;
+  document.getElementById('bobot-alert').innerHTML = ok
+    ? '<div class="alert alert-success">✅ Total bobot valid — siap digunakan untuk kalkulasi SAW.</div>'
+    : '<div class="alert alert-warn">⚠️ Total bobot belum = 1.00. SAW tidak bisa dijalankan.</div>';
+}
+
+function simpan() {
+  const total = bobot.reduce((s, b) => s + b, 0);
+  if (Math.abs(total - 1) > 0.001) {
+    alert('Total bobot harus = 1.00 sebelum disimpan!');
+    return;
+  }
+  saveBobotLS(bobot);
+  alert('✅ Bobot berhasil disimpan!');
+}
+
+renderBobot();
+</script>
+</body>
+</html>

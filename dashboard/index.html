@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Dashboard — Admin Berkah Lestari</title>
+<link rel="stylesheet" href="../style.css"/>
+</head>
+<body>
+<script src="../shared.js"></script>
+<script>
+requireAuth('../login.html');
+renderSidebar({ active: 'dashboard', root: '../' });
+// Render tombol sesuai role
+(function(){
+  const el = document.getElementById('dashboard-actions');
+  if (el) {
+    if (isManager()) {
+      el.innerHTML = '<a class="btn btn-primary btn-sm" href="../saw/ranking.html">🏆 Lihat Ranking</a>';
+    } else {
+      el.innerHTML = '<a class="btn btn-outline btn-sm" href="../saw/proses.html">⚙️ Hitung SAW</a><a class="btn btn-primary btn-sm" href="tanaman.html">+ Tambah Tanaman</a>';
+    }
+  }
+})();
+</script>
+
+<main class="main">
+  <div class="topbar">
+    <div class="page-title">
+      <h2>Dashboard</h2>
+      <p>Ringkasan stok tanaman hari ini</p>
+    </div>
+    <div class="topbar-actions" id="dashboard-actions"></div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card ok">
+      <span class="stat-icon">🌿</span>
+      <div class="stat-label">Total Tanaman</div>
+      <div class="stat-value" id="s-total">—</div>
+      <div class="stat-sub">Jenis aktif di toko</div>
+    </div>
+    <div class="stat-card urgent">
+      <span class="stat-icon">⚠️</span>
+      <div class="stat-label">Stok Menipis</div>
+      <div class="stat-value" id="s-low">—</div>
+      <div class="stat-sub">Perlu restock segera</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon">📦</span>
+      <div class="stat-label">Total Stok</div>
+      <div class="stat-value" id="s-stok">—</div>
+      <div class="stat-sub">Unit tersedia</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon">📊</span>
+      <div class="stat-label">Terakhir SAW</div>
+      <div class="stat-value" id="s-saw">—</div>
+      <div class="stat-sub" id="s-saw-sub">Belum dijalankan</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Stok Tanaman (5 terbaru)</span>
+        <a class="btn btn-outline btn-sm" href="tanaman.html">Lihat Semua</a>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table>
+          <thead>
+            <tr>
+              <th>Tanaman</th>
+              <th>Harga</th>
+              <th>Stok Awal</th>
+              <th>Stok Sekarang</th>
+              <th>Tanggal Input</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="dash-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Distribusi Stok</span></div>
+      <div class="card-body">
+        <div class="mini-chart" id="mini-chart"></div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center">
+          Tiap batang = 1 jenis tanaman
+        </div>
+        <div style="margin-top:20px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--text-mid)">
+            Urgensi Restock
+          </div>
+          <div id="urgency-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const API = '../api.php';
+
+async function loadDashboard() {
+  try {
+    const res     = await fetch(`${API}?action=getTanaman`);
+    const tanaman = await res.json();
+    const sawTime = getSAWTime();
+
+    if (!tanaman.length) {
+      document.getElementById('s-total').textContent = '0';
+      document.getElementById('s-low').textContent   = '0';
+      document.getElementById('s-stok').textContent  = '0';
+      document.getElementById('dash-tbody').innerHTML =
+        '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Belum ada data tanaman</td></tr>';
+      return;
+    }
+
+    // Stats
+    document.getElementById('s-total').textContent = tanaman.length;
+    document.getElementById('s-low').textContent   = tanaman.filter(t => +t.stok_sekarang <= 6).length;
+    document.getElementById('s-stok').textContent  = tanaman.reduce((s,t) => s + +t.stok_sekarang, 0) + ' unit';
+
+    if (sawTime) {
+      document.getElementById('s-saw').textContent     = '✓';
+      document.getElementById('s-saw-sub').textContent = 'Pukul ' + sawTime;
+    }
+
+    // Tabel 5 teratas
+    document.getElementById('dash-tbody').innerHTML = tanaman.slice(0,5).map(t => `
+      <tr>
+        <td><b>${t.nama_tanaman}</b></td>
+        <td>Rp ${parseInt(t.harga).toLocaleString('id-ID')}</td>
+        <td>${t.stok_awal} unit</td>
+        <td>${t.stok_sekarang} unit</td>
+        <td>${t.tanggal_input ? t.tanggal_input.split(' ')[0] : '-'}</td>
+        <td>${stockBadge(+t.stok_sekarang)}</td>
+      </tr>`).join('');
+
+    // Mini chart
+    const maxStok = Math.max(...tanaman.map(t => +t.stok_sekarang));
+    document.getElementById('mini-chart').innerHTML = tanaman.map(t => {
+      const h   = Math.round((+t.stok_sekarang / maxStok) * 55) + 5;
+      const col = +t.stok_sekarang <= 3 ? '#c0392b' : +t.stok_sekarang <= 6 ? '#c07c1a' : '#6da57a';
+      return `<div class="mini-bar" title="${t.nama_tanaman}: ${t.stok_sekarang} unit"
+                style="height:${h}px;background:${col}"></div>`;
+    }).join('');
+
+    // Urgensi restock
+    const sorted = [...tanaman].sort((a,b) => +a.stok_sekarang - +b.stok_sekarang).slice(0,5);
+    document.getElementById('urgency-list').innerHTML = sorted.map(t => {
+      const pct = Math.round((+t.stok_sekarang / maxStok) * 100);
+      const col = +t.stok_sekarang <= 3 ? 'var(--red)' : +t.stok_sekarang <= 6 ? 'var(--amber)' : 'var(--green-accent)';
+      return `<div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+          <span>${t.nama_tanaman}</span>
+          <span style="color:var(--text-muted)">${t.stok_sekarang} unit</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width:${pct}%;background:${col}"></div>
+        </div>
+      </div>`;
+    }).join('');
+
+  } catch (err) {
+    console.error('Gagal load data:', err);
+  }
+}
+
+loadDashboard();
+</script>
+</body>
+</html>

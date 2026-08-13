@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Data Tanaman — Admin Berkah Lestari</title>
+<link rel="stylesheet" href="../style.css"/>
+</head>
+<body>
+<script src="../shared.js"></script>
+<script>
+requireAuth('../login.html');
+renderSidebar({ active: 'tanaman', root: '../' });
+// Sembunyikan aksi tambah/edit/hapus untuk manajer
+if (isManager()) {
+  document.addEventListener('DOMContentLoaded', function() {
+    // Sembunyikan tombol Tambah di topbar
+    const topbarActions = document.querySelector('.topbar-actions');
+    if (topbarActions) topbarActions.style.display = 'none';
+    // Tambah info banner
+    const main = document.querySelector('.main');
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background:#fff3cd;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;color:#92400e;';
+    banner.innerHTML = '👁 <b>Mode Lihat Saja</b> — Manajer tidak dapat menambah, mengubah, atau menghapus data tanaman.';
+    main.insertBefore(banner, main.children[1]);
+  });
+  // Override render tabel — sembunyikan kolom aksi
+  const _origRender = window.render;
+  window.addEventListener('load', function() {
+    // Patch tombol aksi di tabel setelah render
+    const observer = new MutationObserver(() => {
+      document.querySelectorAll('.btn-outline.btn-sm, .btn-danger.btn-sm').forEach(btn => {
+        btn.style.display = 'none';
+      });
+    });
+    const tbody = document.querySelector('tbody');
+    if (tbody) observer.observe(tbody, { childList: true, subtree: true });
+    // Jalankan sekali untuk yg sudah ada
+    document.querySelectorAll('.btn-outline.btn-sm, .btn-danger.btn-sm').forEach(btn => {
+      btn.style.display = 'none';
+    });
+  });
+}
+</script>
+
+<main class="main">
+  <div class="topbar">
+    <div class="page-title">
+      <h2>Data Tanaman</h2>
+      <p>Kelola daftar tanaman hias</p>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-primary" onclick="openAdd()">+ Tambah Tanaman</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Daftar Tanaman (<span id="count">0</span> jenis)</span>
+      <input class="form-input" style="width:220px;padding:7px 12px;font-size:12px"
+             placeholder="🔍 Cari nama tanaman..." oninput="render(this.value)"/>
+    </div>
+    <div class="card-body" style="padding:0">
+      <table>
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>Nama Tanaman</th>
+            <th>Harga</th>
+            <th>Stok Awal</th>
+            <th>Stok Sekarang</th>
+            <th>Tanggal Input</th>
+            <th>Status</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">Tambah Tanaman</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id" value=""/>
+      <div class="form-group">
+        <label class="form-label">Nama Tanaman</label>
+        <input class="form-input" id="f-nama" placeholder="Contoh: Monstera Deliciosa"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Harga (Rp)</label>
+        <input class="form-input" id="f-harga" type="number" min="0" placeholder="Contoh: 120000"/>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Stok Awal</label>
+          <input class="form-input" id="f-stok-awal" type="number" min="0" placeholder="Unit awal"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Stok Sekarang</label>
+          <input class="form-input" id="f-stok-sekarang" type="number" min="0" placeholder="Unit sekarang"/>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Batal</button>
+      <button class="btn btn-primary" onclick="save()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '../api.php';
+let data   = [];
+
+async function loadData() {
+  try {
+    const res = await fetch(`${API}?action=getTanaman`);
+    data = await res.json();
+    render();
+  } catch (err) {
+    console.error('Gagal load data:', err);
+  }
+}
+
+function render(filter = '') {
+  document.getElementById('count').textContent = data.length;
+  const list = filter
+    ? data.filter(t => t.nama_tanaman.toLowerCase().includes(filter.toLowerCase()))
+    : data;
+
+  document.getElementById('tbody').innerHTML = list.length
+    ? list.map((t, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td><b>${t.nama_tanaman}</b></td>
+          <td>Rp ${parseInt(t.harga).toLocaleString('id-ID')}</td>
+          <td>${t.stok_awal} unit</td>
+          <td>${t.stok_sekarang} unit</td>
+          <td>${t.tanggal_input ? t.tanggal_input.split(' ')[0] : '-'}</td>
+          <td>${stockBadge(+t.stok_sekarang)}</td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-outline btn-sm" onclick="openEdit(${t.id})">✏️ Edit</button>
+            <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="del(${t.id}, '${t.nama_tanaman.replace(/'/g,"\\'")}')">🗑</button>
+          </td>
+        </tr>`).join('')
+    : '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Tidak ditemukan</td></tr>';
+}
+
+function openAdd() {
+  document.getElementById('modal-title').textContent = 'Tambah Tanaman Baru';
+  document.getElementById('edit-id').value = '';
+  ['nama','harga','stok-awal','stok-sekarang']
+    .forEach(f => document.getElementById('f-' + f).value = '');
+  document.getElementById('modal').classList.add('open');
+}
+
+function openEdit(id) {
+  const t = data.find(d => d.id == id);
+  if (!t) return;
+  document.getElementById('modal-title').textContent      = 'Edit Tanaman';
+  document.getElementById('edit-id').value                = t.id;
+  document.getElementById('f-nama').value                 = t.nama_tanaman;
+  document.getElementById('f-harga').value                = t.harga;
+  document.getElementById('f-stok-awal').value            = t.stok_awal;
+  document.getElementById('f-stok-sekarang').value        = t.stok_sekarang;
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+}
+
+async function save() {
+  const nama_tanaman   = document.getElementById('f-nama').value.trim();
+  const harga          = +document.getElementById('f-harga').value;
+  const stok_awal      = +document.getElementById('f-stok-awal').value;
+  const stok_sekarang  = +document.getElementById('f-stok-sekarang').value;
+
+  if (!nama_tanaman || !harga || stok_awal === '' || stok_sekarang === '') {
+    alert('Isi semua field terlebih dahulu!');
+    return;
+  }
+
+  const id = document.getElementById('edit-id').value;
+
+  if (id === '') {
+    await fetch(`${API}?action=addTanaman`, {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ nama_tanaman, harga, stok_awal, stok_sekarang })
+    });
+  } else {
+    await fetch(`${API}?action=updateTanaman`, {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ id, nama_tanaman, harga, stok_awal, stok_sekarang })
+    });
+  }
+
+  closeModal();
+  await loadData();
+}
+
+async function del(id, nama) {
+  if (!confirm('Hapus ' + nama + '?')) return;
+  await fetch(`${API}?action=deleteTanaman&id=${id}`);
+  await loadData();
+}
+
+loadData();
+</script>
+</body>
+</html>
